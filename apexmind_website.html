@@ -1,0 +1,971 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>ApexMind — Race Strategy Sim</title>
+  <!-- AI-Based F1 Race Strategy Simulator — S.Y. B.Tech mini project.
+       Single-file website: HTML + CSS + JS all in this one page.
+       The four AI modules (Forward Chaining, CSP, Minimax+Alpha-Beta, A*)
+       run client-side in the script block below - no backend/server needed.
+       Just open this file in any modern browser. -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Oswald:wght@500;600;700&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+  <style>
+/* ApexMind — pit-wall telemetry theme
+   -----------------------------------
+   Palette: graphite asphalt base, racing-orange accent, amber caution,
+   track-limits green for the "good" state. Oswald for display/headings,
+   Inter for body copy, JetBrains Mono for every data readout — the way
+   a real timing screen sets lap numbers and deltas in tabular figures. */
+
+:root {
+  --bg:         #14171C;
+  --panel:      #1B1F26;
+  --panel-alt:  #20242C;
+  --border:     #2A2F38;
+  --text:       #E7E9ED;
+  --text-dim:   #9AA1AC;
+  --accent:     #FF6A31;
+  --accent-dim: #40200F;
+  --good:       #35D483;
+  --caution:    #FFC53D;
+
+  --font-display: "Oswald", sans-serif;
+  --font-body:    "Inter", system-ui, sans-serif;
+  --font-mono:    "JetBrains Mono", ui-monospace, monospace;
+
+  --radius: 10px;
+}
+
+* { box-sizing: border-box; }
+
+html { color-scheme: dark; }
+
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--font-body);
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* ---------------------------------------------------------------- */
+/* Masthead                                                          */
+/* ---------------------------------------------------------------- */
+.masthead {
+  padding: 2.25rem 2rem 1.25rem;
+  border-bottom: 1px solid var(--border);
+}
+
+.masthead__mark {
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: 2rem;
+  letter-spacing: 0.01em;
+  color: var(--text);
+}
+
+.masthead__mark::after {
+  content: "";
+}
+
+.masthead__tag {
+  margin: 0.35rem 0 0;
+  color: var(--text-dim);
+  font-size: 0.95rem;
+  max-width: 46ch;
+}
+
+/* ---------------------------------------------------------------- */
+/* Layout                                                             */
+/* ---------------------------------------------------------------- */
+.layout {
+  display: grid;
+  grid-template-columns: 340px 1fr;
+  gap: 1.5rem;
+  max-width: 1180px;
+  margin: 0 auto;
+  padding: 1.75rem 2rem 4rem;
+  align-items: start;
+}
+
+@media (max-width: 900px) {
+  .layout {
+    grid-template-columns: 1fr;
+    padding: 1.25rem 1.1rem 3rem;
+  }
+}
+
+.panel {
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 1.5rem;
+}
+
+.panel--form {
+  position: sticky;
+  top: 1.5rem;
+}
+
+@media (max-width: 900px) {
+  .panel--form { position: static; }
+}
+
+.panel__title {
+  font-family: var(--font-display);
+  font-weight: 600;
+  font-size: 1.2rem;
+  margin: 0 0 0.25rem;
+}
+
+.panel__hint {
+  color: var(--text-dim);
+  font-size: 0.85rem;
+  margin: 0 0 1.25rem;
+}
+
+/* ---------------------------------------------------------------- */
+/* Form                                                               */
+/* ---------------------------------------------------------------- */
+.form__group {
+  border: none;
+  border-top: 1px solid var(--border);
+  padding: 1rem 0;
+  margin: 0;
+}
+
+.form__group:first-of-type { border-top: none; padding-top: 0; }
+
+.form__group legend {
+  font-family: var(--font-display);
+  font-size: 0.78rem;
+  letter-spacing: 0.04em;
+  color: var(--text-dim);
+  padding: 0;
+  margin-bottom: 0.65rem;
+}
+
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+  font-size: 0.85rem;
+  color: var(--text-dim);
+  margin-bottom: 0.75rem;
+}
+
+.field input,
+.field select {
+  font-family: var(--font-mono);
+  font-size: 0.9rem;
+  color: var(--text);
+  background: var(--panel-alt);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 0.5rem 0.6rem;
+}
+
+.field input:focus,
+.field select:focus {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+.field--check {
+  flex-direction: row;
+  align-items: center;
+  gap: 0.55rem;
+}
+
+.field--check input { width: 16px; height: 16px; accent-color: var(--accent); }
+
+.stock-row {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 0.5rem;
+}
+
+.stock-row label {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  font-size: 0.75rem;
+}
+
+.stock-row input { width: 100%; }
+
+.run-button {
+  width: 100%;
+  margin-top: 0.5rem;
+  padding: 0.8rem 1rem;
+  background: var(--accent);
+  color: #1A0D06;
+  border: none;
+  border-radius: 8px;
+  font-family: var(--font-display);
+  font-weight: 600;
+  font-size: 0.95rem;
+  letter-spacing: 0.01em;
+  cursor: pointer;
+  transition: filter 0.15s ease;
+}
+
+.run-button:hover { filter: brightness(1.08); }
+.run-button:active { filter: brightness(0.95); }
+
+/* ---------------------------------------------------------------- */
+/* Results: empty state                                              */
+/* ---------------------------------------------------------------- */
+.empty-state {
+  border: 1px dashed var(--border);
+  border-radius: var(--radius);
+  padding: 3rem 1.5rem;
+  text-align: center;
+  color: var(--text-dim);
+}
+
+.empty-state p:first-child {
+  font-family: var(--font-display);
+  font-size: 1.1rem;
+  color: var(--text);
+  margin: 0 0 0.5rem;
+}
+
+.empty-state__sub { font-size: 0.9rem; max-width: 40ch; margin: 0 auto; }
+
+/* ---------------------------------------------------------------- */
+/* Hero: the combined recommendation                                 */
+/* ---------------------------------------------------------------- */
+.hero {
+  background: linear-gradient(135deg, var(--accent-dim), var(--panel));
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 1.75rem 2rem;
+  margin-bottom: 1.5rem;
+}
+
+.hero__label {
+  font-family: var(--font-mono);
+  font-size: 0.75rem;
+  color: var(--accent);
+  margin-bottom: 0.4rem;
+}
+
+.hero__headline {
+  font-family: var(--font-display);
+  font-weight: 600;
+  font-size: clamp(1.3rem, 2.4vw, 1.9rem);
+  line-height: 1.25;
+  max-width: 56ch;
+}
+
+.hero__sub {
+  margin-top: 0.75rem;
+  color: var(--text-dim);
+  font-size: 0.9rem;
+}
+
+.hero__sub strong { color: var(--text); font-family: var(--font-mono); }
+
+/* ---------------------------------------------------------------- */
+/* Module grid                                                       */
+/* ---------------------------------------------------------------- */
+.module-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 1.1rem;
+}
+
+@media (max-width: 720px) {
+  .module-grid { grid-template-columns: 1fr; }
+}
+
+.module {
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 1.25rem 1.4rem;
+}
+
+.module__head {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  margin-bottom: 0.35rem;
+}
+
+.module__tag {
+  font-family: var(--font-mono);
+  font-size: 0.8rem;
+  color: var(--accent);
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  width: 1.5rem;
+  height: 1.5rem;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.module h3 {
+  font-family: var(--font-display);
+  font-weight: 600;
+  font-size: 1.02rem;
+  margin: 0;
+}
+
+.module__desc {
+  color: var(--text-dim);
+  font-size: 0.82rem;
+  margin: 0 0 0.9rem;
+}
+
+.module__empty {
+  color: var(--text-dim);
+  font-size: 0.85rem;
+  font-style: normal;
+}
+
+.module__verdict {
+  margin: 0.9rem 0 0;
+  padding-top: 0.75rem;
+  border-top: 1px solid var(--border);
+  font-family: var(--font-mono);
+  font-size: 0.85rem;
+  color: var(--good);
+}
+
+.trail {
+  margin: 0 0 0.75rem;
+  padding-left: 1.1rem;
+  font-family: var(--font-mono);
+  font-size: 0.8rem;
+  color: var(--text-dim);
+}
+
+.trail li { margin-bottom: 0.35rem; }
+
+.plan-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-family: var(--font-mono);
+  font-size: 0.82rem;
+}
+
+.plan-table th {
+  text-align: left;
+  color: var(--text-dim);
+  font-weight: 500;
+  padding: 0.3rem 0.4rem;
+  border-bottom: 1px solid var(--border);
+}
+
+.plan-table td {
+  padding: 0.45rem 0.4rem;
+  border-bottom: 1px solid var(--border);
+}
+
+.plan-table tr.best td { color: var(--good); }
+.plan-table tr:last-child td { border-bottom: none; }
+
+/* ---------------------------------------------------------------- */
+/* Footer note                                                       */
+/* ---------------------------------------------------------------- */
+.disclaimer {
+  margin-top: 1.5rem;
+  color: var(--text-dim);
+  font-size: 0.78rem;
+  max-width: 70ch;
+}
+
+  </style>
+</head>
+<body>
+
+  <header class="masthead">
+    <div class="masthead__mark">ApexMind</div>
+    <p class="masthead__tag">A race-strategy sim built on four AI search &amp; reasoning techniques — runs entirely in this page, no server needed.</p>
+  </header>
+
+  <main class="layout">
+
+    <!-- ============================= PIT WALL: input form ============================= -->
+    <aside class="panel panel--form">
+      <h2 class="panel__title">Pit wall</h2>
+      <p class="panel__hint">Set the current race state, then run the sim.</p>
+
+      <form id="simForm" class="form">
+
+        <fieldset class="form__group">
+          <legend>Race state</legend>
+
+          <label class="field">
+            <span>Current lap</span>
+            <input type="number" name="lap" min="0" value="25" required>
+          </label>
+
+          <label class="field">
+            <span>Total race laps</span>
+            <input type="number" name="total_laps" min="1" value="58" required>
+          </label>
+
+          <label class="field">
+            <span>Weather</span>
+            <select name="weather">
+              <option value="dry" selected>Dry</option>
+              <option value="rain">Rain</option>
+            </select>
+          </label>
+
+          <label class="field field--check">
+            <input type="checkbox" name="safety_car">
+            <span>Safety car is out right now</span>
+          </label>
+        </fieldset>
+
+        <fieldset class="form__group">
+          <legend>Tyres</legend>
+
+          <label class="field">
+            <span>Current compound</span>
+            <select name="compound">
+              <option value="soft" selected>Soft</option>
+              <option value="medium">Medium</option>
+              <option value="hard">Hard</option>
+              <option value="intermediate">Intermediate</option>
+              <option value="wet">Wet</option>
+            </select>
+          </label>
+
+          <label class="field">
+            <span>Laps on current tyres</span>
+            <input type="number" name="tyre_age" min="0" value="19" required>
+          </label>
+
+          <div class="field field--stock">
+            <span>Sets remaining in the garage</span>
+            <div class="stock-row">
+              <label><span>Soft</span><input type="number" name="soft_stock" min="0" value="2"></label>
+              <label><span>Medium</span><input type="number" name="medium_stock" min="0" value="2"></label>
+              <label><span>Hard</span><input type="number" name="hard_stock" min="0" value="1"></label>
+            </div>
+          </div>
+        </fieldset>
+
+        <fieldset class="form__group">
+          <legend>Gaps &amp; pit loss</legend>
+
+          <label class="field">
+            <span>Gap to car ahead (s)</span>
+            <input type="number" step="0.1" name="gap_ahead_seconds" value="8.0">
+          </label>
+
+          <label class="field">
+            <span>Gap to car behind (s)</span>
+            <input type="number" step="0.1" name="gap_behind_seconds" value="3.5">
+          </label>
+
+          <label class="field">
+            <span>Estimated pit-stop loss (s)</span>
+            <input type="number" step="0.1" name="pit_loss_seconds" value="22.0">
+          </label>
+        </fieldset>
+
+        <button type="submit" class="run-button">Run strategy sim</button>
+      </form>
+    </aside>
+
+    <!-- ============================= RESULTS ============================= -->
+    <section class="results">
+
+      <div class="empty-state" id="emptyState">
+        <p>No sim run yet.</p>
+        <p class="empty-state__sub">Fill in the pit wall on the left and press <strong>Run strategy sim</strong> to see what ApexMind recommends.</p>
+      </div>
+
+      <div id="resultsContent" style="display:none">
+
+        <div class="hero">
+          <div class="hero__label">Final call</div>
+          <div class="hero__headline" id="heroHeadline"></div>
+          <div class="hero__sub" id="heroSub"></div>
+        </div>
+
+        <div class="module-grid">
+
+          <!-- Module A -->
+          <article class="module">
+            <div class="module__head">
+              <span class="module__tag">A</span>
+              <h3>Forward chaining</h3>
+            </div>
+            <p class="module__desc">Rule-based advisor — reads telemetry and fires IF–THEN rules.</p>
+            <ol class="trail" id="fcTrail"></ol>
+            <p class="module__empty" id="fcEmpty" style="display:none">No rules fired — nothing unusual in the current conditions.</p>
+            <p class="module__verdict" id="fcVerdict"></p>
+          </article>
+
+          <!-- Module B -->
+          <article class="module">
+            <div class="module__head">
+              <span class="module__tag">B</span>
+              <h3>CSP tyre plan</h3>
+            </div>
+            <p class="module__desc" id="cspDesc"></p>
+            <table class="plan-table" id="cspTable">
+              <thead><tr><th>Plan</th><th>Est. cost</th></tr></thead>
+              <tbody id="cspTableBody"></tbody>
+            </table>
+            <p class="module__empty" id="cspEmpty" style="display:none">No feasible plan with the current tyre stock.</p>
+          </article>
+
+          <!-- Module C -->
+          <article class="module">
+            <div class="module__head">
+              <span class="module__tag">C</span>
+              <h3>Minimax pit duel</h3>
+            </div>
+            <p class="module__desc">Depth-limited search against a rival's best response, with alpha-beta pruning.</p>
+            <table class="plan-table">
+              <thead><tr><th>Our move</th><th>Minimax value</th></tr></thead>
+              <tbody id="duelTableBody"></tbody>
+            </table>
+            <p class="module__verdict" id="duelVerdict"></p>
+          </article>
+
+          <!-- Module D -->
+          <article class="module">
+            <div class="module__head">
+              <span class="module__tag">D</span>
+              <h3>A* strategy search</h3>
+            </div>
+            <p class="module__desc">Lowest-cost stay/pit sequence to the flag over the abstract lap-by-lap state space.</p>
+            <ol class="trail" id="astarTrail"></ol>
+            <p class="module__empty" id="astarEmpty" style="display:none">No further stops needed — run to the flag.</p>
+            <p class="module__verdict" id="astarVerdict"></p>
+          </article>
+
+        </div>
+
+        <p class="disclaimer">Pace, degradation and pit-loss figures are simplified, illustrative values — an educational simulator, not a predictor of real race outcomes.</p>
+      </div>
+    </section>
+
+  </main>
+
+
+  <script>
+/* ============================== MODULE A: Forward Chaining ============================== */
+const FC_WEAR_THRESHOLD = { soft: 15, medium: 25, hard: 35, intermediate: 20, wet: 15 };
+
+function primitiveFacts(s) {
+  const facts = new Set();
+  if (s.tyreAge >= (FC_WEAR_THRESHOLD[s.compound] ?? 20)) facts.add("tyre_worn");
+  if (s.weather === "rain" && ["soft", "medium", "hard"].includes(s.compound)) facts.add("slick_in_rain");
+  if (s.weather === "dry" && ["intermediate", "wet"].includes(s.compound)) facts.add("wet_tyre_in_dry");
+  if (s.safetyCar) facts.add("safety_car_out");
+  if (s.gapBehind < s.pitLoss) facts.add("rival_close_behind");
+  if (s.gapAhead < s.pitLoss * 0.5) facts.add("rival_close_ahead");
+  const lapsLeft = s.totalLaps - s.lap;
+  if (lapsLeft <= 5) facts.add("race_almost_over");
+  if (lapsLeft <= 3 && s.tyreAge < (FC_WEAR_THRESHOLD[s.compound] ?? 20)) facts.add("tyres_will_survive_to_flag");
+  return facts;
+}
+
+const RULES = [
+  [["slick_in_rain"], "must_pit_for_weather"],
+  [["wet_tyre_in_dry"], "must_pit_for_weather"],
+  [["tyre_worn"], "performance_cliff_risk"],
+  [["performance_cliff_risk", "rival_close_behind"], "undercut_threat"],
+  [["safety_car_out"], "cheap_pit_window"],
+  [["cheap_pit_window", "tyre_worn"], "recommend_pit_now"],
+  [["must_pit_for_weather"], "recommend_pit_now"],
+  [["undercut_threat"], "recommend_pit_now"],
+  [["tyres_will_survive_to_flag", "race_almost_over"], "recommend_stay_out"],
+  [["cheap_pit_window", "race_almost_over"], "recommend_stay_out_override"],
+];
+
+function forwardChain(initialFacts) {
+  const facts = new Set(initialFacts);
+  const trail = [];
+  let inferred = true;
+  while (inferred) {
+    inferred = false;
+    for (const [premises, conclusion] of RULES) {
+      if (!facts.has(conclusion) && premises.every((p) => facts.has(p))) {
+        facts.add(conclusion);
+        inferred = true;
+        trail.push(`${conclusion} (from rule [${premises.join(", ")}] => ${conclusion})`);
+      }
+    }
+  }
+  return { facts, trail };
+}
+
+function explainRecommendation(facts) {
+  if (facts.has("must_pit_for_weather")) return "PIT IMMEDIATELY — current tyres are the wrong compound for the weather.";
+  if (facts.has("recommend_stay_out_override")) return "STAY OUT — safety car is out but the race is almost finished; pitting now loses track position for no gain.";
+  if (facts.has("recommend_pit_now")) return "PIT SOON — tyre wear and/or rival threat justify a stop.";
+  if (facts.has("recommend_stay_out")) return "STAY OUT — current tyres should comfortably reach the chequered flag.";
+  return "NO STRONG SIGNAL — continue monitoring, no rule fired decisively.";
+}
+
+function runForwardChaining(s) {
+  const primary = primitiveFacts(s);
+  const { facts, trail } = forwardChain(primary);
+  return { facts, trail, recommendation: explainRecommendation(facts) };
+}
+
+/* ============================== MODULE B: CSP Tyre Planner ============================== */
+const CSP_WEAR_THRESHOLD = { soft: 15, medium: 25, hard: 35, intermediate: 20, wet: 15 };
+const CSP_BASE_PACE = { soft: 0.0, medium: 0.4, hard: 0.9, intermediate: 3.0, wet: 6.0 };
+const CSP_DEGRADATION_PER_LAP = { soft: 0.09, medium: 0.05, hard: 0.03, intermediate: 0.04, wet: 0.03 };
+
+function planTyreStrategy(stintLengths, stock, weather, pitLoss, topN = 3) {
+  const domain = Object.keys(stock).filter((c) => stock[c] > 0);
+  const variables = stintLengths.map((_, i) => `stint_${i + 1}`);
+  const allSolutions = [];
+
+  function backtrack(assignment, stockRemaining) {
+    const idx = Object.keys(assignment).length;
+    if (idx === variables.length) {
+      allSolutions.push({ ...assignment });
+      return;
+    }
+    const varName = variables[idx];
+    for (const compound of domain) {
+      if (stockRemaining[compound] <= 0) continue;
+      if (stintLengths[idx] > (CSP_WEAR_THRESHOLD[compound] ?? 20)) continue;
+      assignment[varName] = compound;
+      stockRemaining[compound] -= 1;
+      backtrack(assignment, stockRemaining);
+      stockRemaining[compound] += 1;
+      delete assignment[varName];
+    }
+  }
+  backtrack({}, { ...stock });
+
+  const satisfiesTwoCompoundRule = (plan) =>
+    weather !== "dry" ? true : new Set(Object.values(plan)).size >= 2;
+
+  function estimateCost(plan) {
+    let total = 0;
+    const entries = Object.entries(plan).sort(
+      (a, b) => parseInt(a[0].split("_")[1]) - parseInt(b[0].split("_")[1])
+    );
+    entries.forEach(([, compound], i) => {
+      const n = stintLengths[i];
+      const base = (CSP_BASE_PACE[compound] ?? 1.0) * n;
+      const deg = (CSP_DEGRADATION_PER_LAP[compound] ?? 0.05) * ((n * (n + 1)) / 2);
+      total += base + deg;
+    });
+    total += pitLoss * (Object.keys(plan).length - 1);
+    return Math.round(total * 100) / 100;
+  }
+
+  const feasible = allSolutions.filter(satisfiesTwoCompoundRule);
+  const ranked = feasible
+    .map((p) => ({ plan: p, cost: estimateCost(p) }))
+    .sort((a, b) => a.cost - b.cost);
+  return { ranked: ranked.slice(0, topN), totalExplored: allSolutions.length, feasibleCount: feasible.length };
+}
+
+/* ============================== MODULE C: Minimax Pit Duel ============================== */
+const DUEL_PIT_LOSS = 22.0;
+const FRESH_TYRE_GAIN_PER_LAP = 0.8;
+const OLD_TYRE_PENALTY_PER_LAP = 0.15;
+const DUEL_ACTIONS = ["pit", "stay"];
+
+function applyAction(state, actor, action) {
+  let { gap, ourAge, rivalAge, lapsLeft } = state;
+  if (actor === "us") {
+    if (action === "pit") { gap -= DUEL_PIT_LOSS; ourAge = 0; }
+    else { gap -= (OLD_TYRE_PENALTY_PER_LAP * ourAge) / 10; ourAge += 1; }
+  } else {
+    if (action === "pit") { gap += DUEL_PIT_LOSS; rivalAge = 0; }
+    else { gap += (OLD_TYRE_PENALTY_PER_LAP * rivalAge) / 10; rivalAge += 1; }
+  }
+  return { gap, ourAge, rivalAge, lapsLeft };
+}
+
+function evaluateDuel(state) {
+  const tyreAdvantage = (state.rivalAge - state.ourAge) * FRESH_TYRE_GAIN_PER_LAP * 0.1;
+  return Math.round((state.gap + tyreAdvantage) * 1000) / 1000;
+}
+
+function minimaxAB(state, depth, alpha, beta, maximizing) {
+  if (depth === 0 || state.lapsLeft === 0) return evaluateDuel(state);
+  if (maximizing) {
+    let best = -Infinity;
+    for (const action of DUEL_ACTIONS) {
+      const next = applyAction(state, "us", action);
+      const score = minimaxAB(next, depth - 1, alpha, beta, false);
+      best = Math.max(best, score);
+      alpha = Math.max(alpha, best);
+      if (beta <= alpha) break;
+    }
+    return best;
+  } else {
+    let best = Infinity;
+    for (const action of DUEL_ACTIONS) {
+      const next = applyAction(state, "rival", action);
+      next.lapsLeft = next.lapsLeft - 1;
+      const score = minimaxAB(next, depth - 1, alpha, beta, true);
+      best = Math.min(best, score);
+      beta = Math.min(beta, best);
+      if (beta <= alpha) break;
+    }
+    return best;
+  }
+}
+
+function runMinimaxDuel(gapToRival, ourTyreAge, rivalTyreAge, horizonLaps = 3, horizonPlies = 4) {
+  const state = { gap: gapToRival, ourAge: ourTyreAge, rivalAge: rivalTyreAge, lapsLeft: horizonLaps };
+  let bestScore = -Infinity;
+  let chosen = null;
+  const breakdown = [];
+  for (const action of DUEL_ACTIONS) {
+    const next = applyAction(state, "us", action);
+    const score = minimaxAB(next, horizonPlies - 1, -Infinity, Infinity, false);
+    breakdown.push([action, score]);
+    if (score > bestScore) { bestScore = score; chosen = action; }
+  }
+  return { chosen, bestScore, breakdown };
+}
+
+/* ============================== MODULE D: A* Strategy Search ============================== */
+const ASTAR_BASE_PACE = { soft: 90.0, medium: 90.4, hard: 90.9, intermediate: 93.0, wet: 96.0 };
+const ASTAR_DEGRADATION_PER_LAP = { soft: 0.09, medium: 0.05, hard: 0.03, intermediate: 0.04, wet: 0.03 };
+const ASTAR_MAX_STINT = { soft: 15, medium: 25, hard: 35, intermediate: 20, wet: 15 };
+
+function lapTime(compound, tyreAge) {
+  return ASTAR_BASE_PACE[compound] + ASTAR_DEGRADATION_PER_LAP[compound] * tyreAge;
+}
+
+function getNeighbors(state, compounds, pitLoss) {
+  const [lap, compound, tyreAge] = state;
+  const neighbors = [];
+  if (tyreAge < (ASTAR_MAX_STINT[compound] ?? 9999)) {
+    neighbors.push([[lap + 1, compound, tyreAge + 1], "stay", lapTime(compound, tyreAge)]);
+  }
+  for (const c of compounds) {
+    if (c === compound) continue;
+    neighbors.push([[lap + 1, c, 1], `pit:${c}`, pitLoss + lapTime(c, 0)]);
+  }
+  return neighbors;
+}
+
+function heuristic(state, totalLaps, compounds) {
+  const lapsRemaining = totalLaps - state[0];
+  const bestPace = Math.min(...compounds.map((c) => ASTAR_BASE_PACE[c]));
+  return lapsRemaining * bestPace;
+}
+
+const stateKey = (state) => state.join(",");
+
+function aStarStrategy(startCompound, startTyreAge, currentLap, totalLaps, compounds, pitLoss) {
+  const start = [currentLap, startCompound, startTyreAge];
+  const startKey = stateKey(start);
+  const gScore = new Map([[startKey, 0]]);
+  const parent = new Map([[startKey, [null, null, start]]]);
+  const openList = [{ f: heuristic(start, totalLaps, compounds), state: start, key: startKey }];
+  const closed = new Set();
+
+  function popMin() {
+    let minIdx = 0;
+    for (let i = 1; i < openList.length; i++) {
+      if (openList[i].f < openList[minIdx].f) minIdx = i;
+    }
+    return openList.splice(minIdx, 1)[0];
+  }
+
+  while (openList.length > 0) {
+    const current = popMin();
+    if (closed.has(current.key)) continue;
+    closed.add(current.key);
+
+    if (current.state[0] >= totalLaps) {
+      const path = [];
+      let key = current.key;
+      while (key !== null) {
+        const [parentKey, action, state] = parent.get(key);
+        path.push([state, action]);
+        key = parentKey;
+      }
+      path.reverse();
+      return { path, totalTime: gScore.get(current.key) };
+    }
+
+    for (const [neighbor, action, stepCost] of getNeighbors(current.state, compounds, pitLoss)) {
+      const nKey = stateKey(neighbor);
+      const tentativeG = gScore.get(current.key) + stepCost;
+      if (!gScore.has(nKey) || tentativeG < gScore.get(nKey)) {
+        gScore.set(nKey, tentativeG);
+        parent.set(nKey, [current.key, action, neighbor]);
+        openList.push({ f: tentativeG + heuristic(neighbor, totalLaps, compounds), state: neighbor, key: nKey });
+      }
+    }
+  }
+  return { path: null, totalTime: Infinity };
+}
+
+function runAstarStrategy(currentLap, totalLaps, compound, tyreAge, availableCompounds, pitLoss) {
+  const { path, totalTime } = aStarStrategy(compound, tyreAge, currentLap, totalLaps, availableCompounds, pitLoss);
+  const pitLaps = path ? path.filter(([, action]) => action && action.startsWith("pit")).map(([state, action]) => [state[0], action]) : [];
+  return { path, totalTime, pitLaps };
+}
+
+
+/* ============================== DOM WIRING ============================== */
+const COMPOUNDS = ["soft", "medium", "hard", "intermediate", "wet"];
+
+function readInputs() {
+  const f = document.getElementById("simForm");
+  return {
+    lap: parseInt(f.lap.value, 10),
+    totalLaps: parseInt(f.total_laps.value, 10),
+    compound: f.compound.value,
+    tyreAge: parseInt(f.tyre_age.value, 10),
+    weather: f.weather.value,
+    safetyCar: f.safety_car.checked,
+    pitLoss: parseFloat(f.pit_loss_seconds.value),
+    gapAhead: parseFloat(f.gap_ahead_seconds.value),
+    gapBehind: parseFloat(f.gap_behind_seconds.value),
+    stock: {
+      soft: parseInt(f.soft_stock.value, 10),
+      medium: parseInt(f.medium_stock.value, 10),
+      hard: parseInt(f.hard_stock.value, 10),
+    },
+  };
+}
+
+function esc(str) {
+  const div = document.createElement("div");
+  div.textContent = str;
+  return div.innerHTML;
+}
+
+function runSimulation(data) {
+  const fc = runForwardChaining(data);
+
+  const lapsRemaining = Math.max(data.totalLaps - data.lap, 1);
+  const firstStint = Math.min(15, lapsRemaining);
+  const secondStint = Math.max(lapsRemaining - firstStint, 1);
+  const csp = planTyreStrategy([firstStint, secondStint], data.stock, data.weather, data.pitLoss, 3);
+
+  const duel = runMinimaxDuel(data.gapBehind - data.gapAhead, data.tyreAge, Math.max(data.tyreAge - 5, 0));
+
+  const compoundsInStock = COMPOUNDS.filter((c) => data.stock[c] > 0);
+  const astar = runAstarStrategy(
+    data.lap, data.totalLaps, data.compound, data.tyreAge,
+    compoundsInStock.length ? compoundsInStock : ["soft", "medium", "hard"],
+    data.pitLoss
+  );
+
+  return { fc, csp, duel, astar };
+}
+
+function renderResults(r) {
+  document.getElementById("emptyState").style.display = "none";
+  const el = document.getElementById("resultsContent");
+  el.style.display = "block";
+
+  const totalTime = Math.round(r.astar.totalTime * 100) / 100;
+
+  // ---- Hero -------------------------------------------------------
+  document.getElementById("heroHeadline").textContent = r.fc.recommendation;
+  document.getElementById("heroSub").innerHTML =
+    `This lap, Minimax says <strong>${r.duel.chosen.toUpperCase()}</strong> ` +
+    `(${r.duel.bestScore >= 0 ? "+" : ""}${r.duel.bestScore.toFixed(2)}s net gap vs. the rival) — ` +
+    `A* projects <strong>${totalTime}s</strong> to the flag from here.`;
+
+  // ---- Module A -----------------------------------------------------
+  const trailEl = document.getElementById("fcTrail");
+  trailEl.innerHTML = "";
+  if (r.fc.trail.length) {
+    r.fc.trail.forEach((line) => {
+      const li = document.createElement("li");
+      li.textContent = line;
+      trailEl.appendChild(li);
+    });
+    trailEl.style.display = "block";
+    document.getElementById("fcEmpty").style.display = "none";
+  } else {
+    trailEl.style.display = "none";
+    document.getElementById("fcEmpty").style.display = "block";
+  }
+  document.getElementById("fcVerdict").textContent = r.fc.recommendation;
+
+  // ---- Module B -----------------------------------------------------
+  document.getElementById("cspDesc").textContent =
+    `${r.csp.feasibleCount} of ${r.csp.totalExplored} assignments respect stock and the two-compound rule.`;
+  const cspBody = document.getElementById("cspTableBody");
+  cspBody.innerHTML = "";
+  if (r.csp.ranked.length) {
+    document.getElementById("cspTable").style.display = "table";
+    document.getElementById("cspEmpty").style.display = "none";
+    r.csp.ranked.forEach((row, i) => {
+      const tr = document.createElement("tr");
+      if (i === 0) tr.className = "best";
+      const chain = Object.values(row.plan).join(" → ");
+      tr.innerHTML = `<td>${esc(chain)}</td><td>${row.cost}s</td>`;
+      cspBody.appendChild(tr);
+    });
+  } else {
+    document.getElementById("cspTable").style.display = "none";
+    document.getElementById("cspEmpty").style.display = "block";
+  }
+
+  // ---- Module C -----------------------------------------------------
+  const duelBody = document.getElementById("duelTableBody");
+  duelBody.innerHTML = "";
+  r.duel.breakdown.forEach(([action, score]) => {
+    const tr = document.createElement("tr");
+    if (action === r.duel.chosen) tr.className = "best";
+    const sign = score >= 0 ? "+" : "";
+    tr.innerHTML = `<td>${action.charAt(0).toUpperCase() + action.slice(1)}</td><td>${sign}${score.toFixed(2)}s</td>`;
+    duelBody.appendChild(tr);
+  });
+  document.getElementById("duelVerdict").textContent = `Best immediate move: ${r.duel.chosen.toUpperCase()}`;
+
+  // ---- Module D -----------------------------------------------------
+  const astarTrail = document.getElementById("astarTrail");
+  astarTrail.innerHTML = "";
+  if (r.astar.pitLaps.length) {
+    astarTrail.style.display = "block";
+    document.getElementById("astarEmpty").style.display = "none";
+    r.astar.pitLaps.forEach(([lapNo, action]) => {
+      const li = document.createElement("li");
+      li.textContent = `Lap ${lapNo}: ${action.replace("pit:", "pit for ")}`;
+      astarTrail.appendChild(li);
+    });
+  } else {
+    astarTrail.style.display = "none";
+    document.getElementById("astarEmpty").style.display = "block";
+  }
+  document.getElementById("astarVerdict").textContent = `Projected finish time: ${totalTime}s`;
+}
+
+document.getElementById("simForm").addEventListener("submit", function (e) {
+  e.preventDefault();
+  const data = readInputs();
+  const results = runSimulation(data);
+  renderResults(results);
+});
+
+// Auto-run once on load with the pre-filled defaults, so opening this file
+// immediately shows a full preview without needing a click first.
+window.addEventListener("DOMContentLoaded", function () {
+  const data = readInputs();
+  const results = runSimulation(data);
+  renderResults(results);
+});
+
+  </script>
+
+</body>
+</html>
